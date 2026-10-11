@@ -5,7 +5,7 @@ WORKDIR /
 RUN apt-get update && apt-get install -y git git-lfs wget && rm -rf /var/lib/apt/lists/*
 
 # Upgrade PyTorch to 2.5.1+ to support Anima, Qwen encoders, and modern Comfy custom ops
-RUN pip install --no-cache-dir --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+RUN pip install --no-cache-dir --upgrade torch torchvision torchaudio
 
 # Clone latest ComfyUI with native Anima support
 RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI
