@@ -5,15 +5,16 @@ import base64
 import urllib.request
 import subprocess
 import runpod
+import sys
 
 COMFY_HOST = "127.0.0.1:8188"
 
 
-# 1. Start ComfyUI in the background
 def start_comfy():
     print("Launching ComfyUI background process...")
     cmd = [
-        "python",
+        sys.executable,
+        "-u",
         "/ComfyUI/main.py",
         "--listen",
         "127.0.0.1",
@@ -22,21 +23,36 @@ def start_comfy():
         "--extra-model-paths-config",
         "/app/extra_model_paths.yaml",
     ]
-    subprocess.Popen(cmd)
 
-    # Wait until ComfyUI responds
-    for _ in range(60):
+    # Open ComfyUI and direct logs straight to container stdout/stderr
+    proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
+
+    # Healthcheck polling
+    start_time = time.time()
+    while time.time() - start_time < 90:
+        # Check if ComfyUI crashed immediately
+        poll = proc.poll()
+        if poll is not None:
+            raise RuntimeError(
+                f"ComfyUI crashed on startup with exit code {poll}. Check logs above."
+            )
+
+        # Test if the HTTP server is listening
         try:
-            req = urllib.request.urlopen(f"http://{COMFY_HOST}/system_stats")
+            req = urllib.request.urlopen(f"http://{COMFY_HOST}/system_stats", timeout=2)
             if req.status == 200:
-                print("ComfyUI successfully initialized.")
-                return True
+                print("ComfyUI successfully initialized and ready!")
+                return proc
         except Exception:
             time.sleep(1)
-    raise RuntimeError("Timed out waiting for ComfyUI to start.")
+
+    # Kill process if it got stuck hanging
+    proc.terminate()
+    raise RuntimeError("Timed out waiting for ComfyUI to start after 90 seconds.")
 
 
-start_comfy()
+# Start ComfyUI
+comfy_process = start_comfy()
 
 
 # 2. Queue prompt workflow
