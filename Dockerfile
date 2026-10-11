@@ -10,6 +10,7 @@ RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI
 WORKDIR /ComfyUI
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir runpod
+RUN pip uninstall -y comfy-kitchen # workaround for error with type hints
 
 # Optional: Add any custom ComfyUI node extensions here
 # RUN git clone https://github.com/ltdrdata/ComfyUI-Manager.git /ComfyUI/custom_nodes/ComfyUI-Manager
