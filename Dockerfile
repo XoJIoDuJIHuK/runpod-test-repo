@@ -4,15 +4,15 @@ WORKDIR /
 
 RUN apt-get update && apt-get install -y git git-lfs wget && rm -rf /var/lib/apt/lists/*
 
-# Clone stable ComfyUI
-RUN git clone --depth 1 --branch v0.3.10 https://github.com/comfyanonymous/ComfyUI.git /ComfyUI
+# Upgrade PyTorch to 2.5.1+ to support Anima, Qwen encoders, and modern Comfy custom ops
+RUN pip install --no-cache-dir --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+# Clone latest ComfyUI with native Anima support
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git /ComfyUI
 
 WORKDIR /ComfyUI
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir runpod
-
-# Pin transformers to avoid the PyTorch >= 2.5 requirement warning
-RUN pip install --no-cache-dir "transformers<4.48.0"
 
 WORKDIR /app
 COPY extra_model_paths.yaml /app/extra_model_paths.yaml
