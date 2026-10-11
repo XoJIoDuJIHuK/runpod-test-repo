@@ -1,17 +1,18 @@
 import os
+import sys
 import json
 import time
 import base64
 import urllib.request
 import subprocess
+import traceback
 import runpod
-import sys
 
 COMFY_HOST = "127.0.0.1:8188"
 
 
 def start_comfy():
-    print("Launching ComfyUI background process...")
+    print("Launching ComfyUI background process...", flush=True)
     cmd = [
         sys.executable,
         "-u",
@@ -24,38 +25,37 @@ def start_comfy():
         "/app/extra_model_paths.yaml",
     ]
 
-    # Open ComfyUI and direct logs straight to container stdout/stderr
     proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
 
-    # Healthcheck polling
     start_time = time.time()
     while time.time() - start_time < 90:
-        # Check if ComfyUI crashed immediately
         poll = proc.poll()
         if poll is not None:
             raise RuntimeError(
-                f"ComfyUI crashed on startup with exit code {poll}. Check logs above."
+                f"ComfyUI terminated unexpectedly with exit code {poll}."
             )
 
-        # Test if the HTTP server is listening
         try:
             req = urllib.request.urlopen(f"http://{COMFY_HOST}/system_stats", timeout=2)
             if req.status == 200:
-                print("ComfyUI successfully initialized and ready!")
+                print("ComfyUI successfully initialized and ready!", flush=True)
                 return proc
         except Exception:
             time.sleep(1)
 
-    # Kill process if it got stuck hanging
     proc.terminate()
-    raise RuntimeError("Timed out waiting for ComfyUI to start after 90 seconds.")
+    raise RuntimeError("Timed out waiting for ComfyUI to respond after 90 seconds.")
 
 
-# Start ComfyUI
-comfy_process = start_comfy()
+# Main startup protected with visible traceback
+try:
+    comfy_process = start_comfy()
+except Exception as e:
+    print(f"FATAL STARTUP ERROR: {e}", file=sys.stderr, flush=True)
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
 
 
-# 2. Queue prompt workflow
 def queue_prompt(workflow):
     payload = json.dumps({"prompt": workflow}).encode("utf-8")
     req = urllib.request.Request(
@@ -67,13 +67,11 @@ def queue_prompt(workflow):
         return json.loads(response.read())
 
 
-# 3. Poll for execution history
 def get_history(prompt_id):
     with urllib.request.urlopen(f"http://{COMFY_HOST}/history/{prompt_id}") as response:
         return json.loads(response.read())
 
 
-# 4. RunPod Job Handler
 def handler(job):
     job_input = job.get("input", {})
     workflow = job_input.get("workflow")
@@ -81,11 +79,9 @@ def handler(job):
     if not workflow:
         return {"error": "Missing 'workflow' parameter in payload."}
 
-    # Queue generation
     prompt_res = queue_prompt(workflow)
     prompt_id = prompt_res.get("prompt_id")
 
-    # Poll history until complete
     max_wait = 300
     start_time = time.time()
     images_base64 = []
