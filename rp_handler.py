@@ -10,6 +10,28 @@ import runpod
 
 COMFY_HOST = "127.0.0.1:8188"
 
+print("=== RUNPOD VOLUME INSPECTION ===", flush=True)
+if not os.path.exists("/runpod-volume"):
+    print(
+        "ERROR: /runpod-volume does NOT exist at all! Volume is not attached.",
+        flush=True,
+    )
+else:
+    contents = []
+    for root, dirs, files in os.walk("/runpod-volume"):
+        for f in files:
+            contents.append(os.path.join(root, f))
+    if not contents:
+        print(
+            "WARNING: /runpod-volume exists, but is COMPLETELY EMPTY. Check Volume attachment & region!",
+            flush=True,
+        )
+    else:
+        print(f"Found {len(contents)} files in /runpod-volume:")
+        for item in contents[:20]:  # print first 20 files
+            print(f"  -> {item}", flush=True)
+print("================================", flush=True)
+
 
 def start_comfy():
     print("Launching ComfyUI background process...", flush=True)
