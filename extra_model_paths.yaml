@@ -3,4 +3,5 @@ runpod:
   checkpoints: models/checkpoints
   loras: models/loras
   vae: models/vae
-  clip: models/clip
+  clip: models/text_encoders
+  text_encoders: models/text_encoders

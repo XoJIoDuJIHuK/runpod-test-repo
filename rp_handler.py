@@ -32,6 +32,22 @@ else:
             print(f"  -> {item}", flush=True)
 print("================================", flush=True)
 
+# Symlink fallback so both /models/clip and /models/text_encoders always work
+if os.path.exists("/runpod-volume/models/text_encoders") and not os.path.exists(
+    "/runpod-volume/models/clip"
+):
+    try:
+        os.symlink("/runpod-volume/models/text_encoders", "/runpod-volume/models/clip")
+    except Exception:
+        pass
+elif os.path.exists("/runpod-volume/models/clip") and not os.path.exists(
+    "/runpod-volume/models/text_encoders"
+):
+    try:
+        os.symlink("/runpod-volume/models/clip", "/runpod-volume/models/text_encoders")
+    except Exception:
+        pass
+
 
 def start_comfy():
     print("Launching ComfyUI background process...", flush=True)
