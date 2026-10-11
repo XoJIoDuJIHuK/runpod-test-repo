@@ -10,44 +10,6 @@ import runpod
 
 COMFY_HOST = "127.0.0.1:8188"
 
-print("=== RUNPOD VOLUME INSPECTION ===", flush=True)
-if not os.path.exists("/runpod-volume"):
-    print(
-        "ERROR: /runpod-volume does NOT exist at all! Volume is not attached.",
-        flush=True,
-    )
-else:
-    contents = []
-    for root, dirs, files in os.walk("/runpod-volume"):
-        for f in files:
-            contents.append(os.path.join(root, f))
-    if not contents:
-        print(
-            "WARNING: /runpod-volume exists, but is COMPLETELY EMPTY. Check Volume attachment & region!",
-            flush=True,
-        )
-    else:
-        print(f"Found {len(contents)} files in /runpod-volume:")
-        for item in contents[:20]:  # print first 20 files
-            print(f"  -> {item}", flush=True)
-print("================================", flush=True)
-
-# Symlink fallback so both /models/clip and /models/text_encoders always work
-if os.path.exists("/runpod-volume/models/text_encoders") and not os.path.exists(
-    "/runpod-volume/models/clip"
-):
-    try:
-        os.symlink("/runpod-volume/models/text_encoders", "/runpod-volume/models/clip")
-    except Exception:
-        pass
-elif os.path.exists("/runpod-volume/models/clip") and not os.path.exists(
-    "/runpod-volume/models/text_encoders"
-):
-    try:
-        os.symlink("/runpod-volume/models/clip", "/runpod-volume/models/text_encoders")
-    except Exception:
-        pass
-
 
 def start_comfy():
     print("Launching ComfyUI background process...", flush=True)
@@ -111,6 +73,48 @@ def get_history(prompt_id):
 
 
 def handler(job):
+    print("=== RUNPOD VOLUME INSPECTION ===", flush=True)
+    if not os.path.exists("/runpod-volume"):
+        print(
+            "ERROR: /runpod-volume does NOT exist at all! Volume is not attached.",
+            flush=True,
+        )
+    else:
+        contents = []
+        for root, dirs, files in os.walk("/runpod-volume"):
+            for f in files:
+                contents.append(os.path.join(root, f))
+        if not contents:
+            print(
+                "WARNING: /runpod-volume exists, but is COMPLETELY EMPTY. Check Volume attachment & region!",
+                flush=True,
+            )
+        else:
+            print(f"Found {len(contents)} files in /runpod-volume:")
+            for item in contents[:20]:  # print first 20 files
+                print(f"  -> {item}", flush=True)
+    print("================================", flush=True)
+
+    # Symlink fallback so both /models/clip and /models/text_encoders always work
+    if os.path.exists("/runpod-volume/models/text_encoders") and not os.path.exists(
+        "/runpod-volume/models/clip"
+    ):
+        try:
+            os.symlink(
+                "/runpod-volume/models/text_encoders", "/runpod-volume/models/clip"
+            )
+        except Exception:
+            pass
+    elif os.path.exists("/runpod-volume/models/clip") and not os.path.exists(
+        "/runpod-volume/models/text_encoders"
+    ):
+        try:
+            os.symlink(
+                "/runpod-volume/models/clip", "/runpod-volume/models/text_encoders"
+            )
+        except Exception:
+            pass
+
     job_input = job.get("input", {})
     workflow = job_input.get("workflow")
 
