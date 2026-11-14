@@ -6,3 +6,4 @@ runpod:
   vae: models/vae
   clip: models/text_encoders
   text_encoders: models/text_encoders
+  upscalers: models/upscalers

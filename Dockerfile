@@ -24,6 +24,7 @@ RUN comfy --skip-prompt tracking disable
 RUN comfy --here node registry-install \
     rgthree-comfy \
     comfyui-impact-pack \
+    comfyui-clip-with-break \
     comfyui-impact-subpack
 
 WORKDIR /app
