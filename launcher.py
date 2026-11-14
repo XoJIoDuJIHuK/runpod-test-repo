@@ -2,10 +2,12 @@ import base64
 import json
 import random
 import time
+import os
 import requests
 
-RUNPOD_API_KEY = "YOUR_RUNPOD_API_KEY"
-ENDPOINT_ID = "YOUR_ENDPOINT_ID"  # Found in Serverless dashboard
+RUNPOD_API_KEY = os.environ.get("RUNPOD_API_KEY")
+ENDPOINT_ID = os.environ.get("ENDPOINT_ID")
+assert RUNPOD_API_KEY is not None and ENDPOINT_ID is not None
 
 HEADERS = {
     "Authorization": f"Bearer {RUNPOD_API_KEY}",
@@ -13,46 +15,95 @@ HEADERS = {
 }
 
 
+def save_output_images(output, seed):
+    images = output.get("images", [])
+    if not images:
+        print(
+            "Warning: Job marked completed but no images were returned in output:",
+            output,
+        )
+        return
+
+    for idx, b64_str in enumerate(images):
+        filename = f"output_{seed}_{idx}.png"
+        with open(filename, "wb") as f:
+            f.write(base64.b64decode(b64_str))
+        print(f"🎉 Successfully saved: {filename}")
+
+
+def poll_for_completion(job_id, seed):
+    print(f"Job is processing in the cloud (ID: {job_id}). Polling for results...")
+    status_url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/status/{job_id}"
+
+    start_time = time.time()
+    while time.time() - start_time < 300:  # 5 minute timeout
+        time.sleep(3)
+        res = requests.get(status_url, headers=HEADERS).json()
+        status = res.get("status")
+
+        if status == "COMPLETED":
+            print(f"Job finished in {res.get('executionTime', 0) / 1000:.1f}s!")
+            save_output_images(res.get("output", {}), seed)
+            return
+        elif status == "FAILED":
+            print(f"❌ Job failed: {res.get('error')}")
+            return
+        elif status in ["IN_PROGRESS", "IN_QUEUE"]:
+            print(".", end="", flush=True)
+        else:
+            print(f"\nUnexpected status: {status}")
+            return
+
+    print("\nTimed out waiting for serverless job.")
+
+
 def generate(
-    checkpoint_name: str,
     prompt: str,
     negative_prompt: str,
-    width: int = 832,
-    height: int = 1216,
-    steps: int = 28,
-    cfg: float = 6.0,
-    seed: int = None,
+    checkpoint_name: str = "novaAnimeAM_v6029B.safetensors",
+    vae_name: str = "qwen_image_vae.safetensors",
+    clip_name: str = "qwen_3_06b_base.safetensors",
+    workflow_file_path: str = "workflow_api.json",
+    width: int = 960,
+    height: int = 1680,
+    steps: int = 25,
+    cfg: float = 7.0,
+    seed: int | None = None,
 ):
-    # 1. Load API Workflow template
-    with open("workflow_api.json", "r") as f:
+    with open(workflow_file_path, "r") as f:
         wf = json.load(f)
 
     if seed is None:
-        seed = random.randint(1, 999999999999)
+        seed = random.randint(1, 999999999999999)
 
-    # 2. Programmatically map parameters to nodes
-    for _, node in wf.items():
-        node_type = node.get("class_type")
+    # Update Prompts
+    wf["3"]["inputs"]["text"] = prompt
+    wf["4"]["inputs"]["text"] = negative_prompt
 
-        if node_type == "CheckpointLoaderSimple":
-            node["inputs"]["ckpt_name"] = checkpoint_name
-        elif node_type == "EmptyLatentImage":
-            node["inputs"]["width"] = width
-            node["inputs"]["height"] = height
-        elif node_type == "KSampler":
-            node["inputs"]["seed"] = seed
-            node["inputs"]["steps"] = steps
-            node["inputs"]["cfg"] = cfg
+    # Update Models
+    if "14" in wf:
+        if "ckpt_name" in wf["14"]["inputs"]:
+            wf["14"]["inputs"]["ckpt_name"] = checkpoint_name
+        elif "unet_name" in wf["14"]["inputs"]:
+            wf["14"]["inputs"]["unet_name"] = checkpoint_name
 
-    # Update prompts (match your workflow's positive and negative CLIPTextEncode IDs)
-    # Check workflow_api.json to verify the exact string IDs for these nodes:
-    wf["6"]["inputs"]["text"] = prompt
-    wf["7"]["inputs"]["text"] = negative_prompt
+    if "15" in wf and "vae_name" in wf["15"]["inputs"]:
+        wf["15"]["inputs"]["vae_name"] = vae_name
 
-    # 3. Send to RunPod
+    if "16" in wf and "clip_name" in wf["16"]["inputs"]:
+        wf["16"]["inputs"]["clip_name"] = clip_name
+
+    # Update Dimensions & Sampler
+    wf["8"]["inputs"]["width"] = width
+    wf["8"]["inputs"]["height"] = height
+    wf["5"]["inputs"]["seed"] = seed
+    wf["5"]["inputs"]["steps"] = steps
+    wf["5"]["inputs"]["cfg"] = cfg
+
     payload = {"input": {"workflow": wf}}
-    print(f"Triggering endpoint (Seed: {seed})...")
+    print(f"Triggering generation (Seed: {seed})...")
 
+    # We append ?wait=120 to allow RunPod up to 120 seconds before timing out
     res = requests.post(
         f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync",
         headers=HEADERS,
@@ -60,44 +111,24 @@ def generate(
         timeout=180,
     ).json()
 
-    # 4. Handle sync / async responses
-    if res.get("status") == "COMPLETED":
-        save_images(res["output"], seed)
-    elif res.get("status") in ["IN_QUEUE", "IN_PROGRESS"]:
-        poll_job(res["id"], seed)
+    status = res.get("status")
+    job_id = res.get("id")
+
+    if status == "COMPLETED":
+        print("Job completed immediately!")
+        save_output_images(res.get("output", {}), seed)
+    elif status in ["IN_PROGRESS", "IN_QUEUE"]:
+        poll_for_completion(job_id, seed)
     else:
-        print("Build/Execution Error:", res)
-
-
-def poll_job(job_id, seed):
-    print(f"Waiting for job {job_id}...")
-    while True:
-        res = requests.get(
-            f"https://api.runpod.ai/v2/{ENDPOINT_ID}/status/{job_id}", headers=HEADERS
-        ).json()
-        if res.get("status") == "COMPLETED":
-            save_images(res["output"], seed)
-            break
-        elif res.get("status") == "FAILED":
-            print("Execution failed:", res)
-            break
-        time.sleep(3)
-
-
-def save_images(output, seed):
-    images = output.get("images", [])
-    for idx, b64_str in enumerate(images):
-        file_path = f"output_{seed}_{idx}.png"
-        with open(file_path, "wb") as f:
-            f.write(base64.b64decode(b64_str))
-        print(f"Saved: {file_path}")
+        print("API Error Response:", res)
 
 
 if __name__ == "__main__":
     generate(
-        checkpoint_name="cyberrealistic_v42.safetensors",
-        prompt="1girl, solo, photorealistic, looking at viewer, cinematic lighting, 8k",
-        negative_prompt="(worst quality, low quality:1.4), bad anatomy, deformed limbs",
-        steps=25,
-        cfg=5.5,
+        prompt="masterpiece, best quality, score_9, score_8, newest, highres, absurdres, very aesthetic, explicit, 1girl, solo, succubus in explicit lingerie, sitting  on a sofa in bedroom, inviting pose, portrait from below, extreme dutch angle, red hair, small black bat wings on back, wide open eyes, glowing purple tattoo on crotch, dim light",
+        negative_prompt="small face, text across face, unreadable text, extra rings, extra chains, worst quality, low quality, early, old, score_1, score_2, score_3, cartoon, graphic, painting, crayon, graphite, abstract, glitch, deformed, mutated, disfigured, ugly, long body, bad anatomy, bad hands, missing fingers, extra fingers, extra digits, fewer digits, cropped, very displeasing, artist name, blurry, jpeg artifacts, lowres, censor",
+        checkpoint_name="novaAnimeAM_v6029B.safetensors",
+        # checkpoint_name="ilustmix_v111.safetensors",
+        vae_name="qwen_image_vae.safetensors",
+        clip_name="qwen_3_06b_base.safetensors",
     )
