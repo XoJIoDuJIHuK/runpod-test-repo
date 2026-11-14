@@ -20,12 +20,22 @@ RUN pip install --no-cache-dir runpod comfy-cli
 # Disable comfy-cli telemetry prompt
 RUN comfy --skip-prompt tracking disable
 
-# Install custom nodes from the Comfy Registry (use lowercase Registry IDs)
-RUN comfy --here node registry-install \
-    rgthree-comfy \
-    comfyui-impact-pack \
-    comfyui-clip-with-break \
-    comfyui-impact-subpack
+WORKDIR /ComfyUI/custom_nodes
+
+RUN git clone --depth 1 https://github.com/rgthree/rgthree-comfy.git && \
+    git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Pack.git && \
+    git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Impact-Subpack.git && \
+    git clone --depth 1 https://github.com/dfl/comfyui-clip-with-break.git
+
+# Install Python dependencies for cloned nodes
+RUN for dir in /ComfyUI/custom_nodes/*; do \
+        if [ -f "$dir/requirements.txt" ]; then \
+            pip install --no-cache-dir -r "$dir/requirements.txt"; \
+        fi; \
+        if [ -f "$dir/install.py" ]; then \
+            python "$dir/install.py"; \
+        fi; \
+    done
 
 WORKDIR /app
 COPY extra_model_paths.yaml /app/extra_model_paths.yaml
